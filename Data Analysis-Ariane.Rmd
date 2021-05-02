@@ -177,7 +177,7 @@ backward.summary.frame
 ```
 Based on Cross Validation we pick the model with 6 parameters
 ```{r}
-coef(best_subset.fit,6)
+coef(backward.fit,6)
 ```
 
 

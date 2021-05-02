@@ -22,6 +22,8 @@ library(rpart)
 library(rpart.plot)
 library(leaps)
 library(glmnet)
+library(cowplot)
+library(kableExtra)
 
 # Minsu packages
 
@@ -70,17 +72,372 @@ slide text
 
 # Subset Selection
 
-## Slide Name
+## Cross Validation of Best Subset, Forward and Backward Stepwise 
 
-slide text
+10-fold cross validation of data was done to find the optimal number of parameters for the model selected using each method. This is done to balance the model fitting the data well and the model having decent predictive accuracy.
 
+
+```{r}
+predict.regsubsets <- function (object ,newdata ,id ,...){
+  form<-as.formula(object$call [[2]])
+  mat<-model.matrix(form,newdata)
+  coefi<-coef(object ,id=id)
+  xvars<-names(coefi)
+  mat[,xvars]%*%coefi
+}
+```
+
+```{r}
+set.seed(100)
+
+k<-10
+
+folds<-sample(1:k,nrow(dat[,c(4:13)]),replace=TRUE)
+cv.errors.best_subset <- matrix(NA,k,9, dimnames=list(NULL, paste(1:9)))
+cv.errors.forward <- matrix(NA,k,9, dimnames=list(NULL, paste(1:9)))
+cv.errors.backward <- matrix(NA,k,9, dimnames=list(NULL, paste(1:9)))
+
+
+for(j in 1:k){
+  # best subset select
+  best_subset.fit <- regsubsets(cum_case~.,data = dat[folds!=j,c(4:13)],
+                                method = "exhaustive", nvmax = 9)
+  # forward stepwise select
+  forward.fit <- regsubsets(cum_case~.,data = dat[folds!=j,c(4:13)],
+                                method = "forward", nvmax = 9)
+  # backward stepwise select
+  backward.fit <- regsubsets(cum_case~.,data = dat[folds!=j,c(4:13)],
+                                method = "backward", nvmax = 9)
+  
+  for(i in 1:9){
+    # best subset error
+    pred.best <- 
+      predict.regsubsets(best_subset.fit, dat[folds==j,c(4:13)], id=i)
+    cv.errors.best_subset[j,i] <-
+      mean((dat$cum_case[folds==j]-pred.best)^2)
+    
+    # forward stepwise error
+    pred.forward <- 
+      predict.regsubsets(forward.fit, dat[folds==j,c(4:13)], id=i)
+    cv.errors.forward[j,i] <-
+      mean((dat$cum_case[folds==j]-pred.forward)^2)
+    
+    # backward stepwise error
+    pred.backward <- 
+      predict.regsubsets(backward.fit, dat[folds==j,c(4:13)], id=i)
+    cv.errors.backward[j,i] <-
+      mean((dat$cum_case[folds==j]-pred.backward)^2)
+  
+    
+  } }
+```
+
+---
+```{r}
+#best subset CV model selection
+mean.cv.errors.best <- apply(cv.errors.best_subset,2,mean)
+
+plot.best <- ggplot(mapping=aes(x=(1:length(mean.cv.errors.best)),
+                           y = mean.cv.errors.best)) +
+  geom_point(size=2) +
+  geom_line()+
+  geom_point(mapping = aes(x=which.min(mean.cv.errors.best),
+       y=mean.cv.errors.best[which.min(mean.cv.errors.best)]),
+       color="red", size=2.2)+
+  scale_x_continuous(breaks = seq(1,9,2))+
+  xlab("Number of Variables")+
+  ylab("Mean C.V. Error") +
+  labs(title="Best Subset Selection")
+
+#forward stepwise CV model selection
+mean.cv.errors.forward <- apply(cv.errors.forward,2,mean)
+
+plot.forward <- ggplot(mapping=aes(x=(1:length(mean.cv.errors.forward)),
+                           y = mean.cv.errors.forward)) +
+  geom_point(size=2) +
+  geom_line()+
+  geom_point(mapping = aes(x=which.min(mean.cv.errors.forward),
+       y=mean.cv.errors.forward[which.min(mean.cv.errors.forward)]),
+       color="red", size=2.2)+
+  scale_x_continuous(breaks = seq(1,9,2))+
+  xlab("Number of Variables")+
+  ylab("Mean C.V. Error") +
+  labs(title="Forward Stepwise Selection")
+
+
+#backward stepwise CV model selection
+mean.cv.errors.backward <- apply(cv.errors.backward,2,mean)
+plot.backward <- ggplot(mapping=aes(
+  x=(1:length(mean.cv.errors.backward)),
+                           y = mean.cv.errors.backward)) +
+  geom_point(size=2) +
+  geom_line()+
+  geom_point(mapping = aes(x=which.min(mean.cv.errors.backward),
+       y=mean.cv.errors.backward[which.min(mean.cv.errors.backward)]),
+       color="red", size=2.2)+
+  scale_x_continuous(breaks = seq(1,9,2))+
+  xlab("Number of Variables")+
+  ylab("Mean C.V. Error") +
+  labs(title="Backward Stepwise Selection")
+
+
+plot_grid(plot.best,plot.forward,plot.backward)
+
+```
+
+
+
+## Best Subset Overall
+
+Recall 10 fold cross validation of best subset selection selected the model with 2 parameters as having the lowest average cross validation predictive error.
+```{r}
+best_subset.fit <- regsubsets(cum_case~.,data = dat[,c(4:13)],
+                              method = "exhaustive", nvmax = 9)
+best_subset.summary <- summary(best_subset.fit)
+best_subset.summary.frame <- 
+  data_frame("Parameters" = seq(1:9),
+             "R^2" = round(best_subset.summary$rsq,4),
+             "AdjR^2" = round(best_subset.summary$adjr2,4),
+             "CP" = round(best_subset.summary$cp,4),
+             "BIC" = round(best_subset.summary$bic,4))%>% 
+  kable() %>% 
+  kable_classic()
+
+best_subset.summary.frame
+
+```
+
+
+
+## Forward Stepwise Overall
+
+Recall 10 fold cross validation of forward stepwise selection selected the model with 2 parameters as having the lowest average cross validation predictive error.
+
+```{r}
+forward.fit <- regsubsets(cum_case~.,data = dat[,c(4:13)],
+                              method = "forward", nvmax = 9)
+forward.summary <- summary(forward.fit)
+forward.summary.frame <- 
+  data_frame("Parameters" = seq(1:9),
+             "R^2" = round(forward.summary$rsq,4),
+             "AdjR^2" = round(forward.summary$adjr2,4),
+             "CP" = round(forward.summary$cp,4), 
+             "BIC" = round(forward.summary$bic,4)) %>% 
+  kable() %>% 
+  kable_classic()
+
+forward.summary.frame
+
+
+```
+
+
+
+## Backward Stepwise Overall
+
+Recall 10 fold cross validation of backward stepwise selection selected the model with 6 parameters as having the lowest average cross validation predictive error.
+```{r}
+backward.fit <- regsubsets(cum_case~.,data = dat[,c(4:13)],
+                              method = "backward", nvmax = 9)
+backward.summary <- summary(backward.fit)
+backward.summary.frame <- 
+  data_frame("Parameters" = seq(1:9),
+             "R^2" = round(backward.summary$rsq,4),
+             "AdjR^2" = round(backward.summary$adjr2,4),
+             "CP" = round(backward.summary$cp,4),
+             "BIC" = round(backward.summary$bic,4))%>% 
+  kable() %>% 
+  kable_classic()
+
+backward.summary.frame
+```
+
+## Model Summary
+Best Subset:
+The model has parameters: Total Population, and Total Hispanic.
+
+Cumulative Cases = 315.11931521 + 0.07300349(Total Population) + 0.08304726(Total Hispanic) 
+```{r include=FALSE}
+coef(best_subset.fit,2)
+```
+
+Forward Stepwise:
+The model has parameters: Total Population, Total White, and Total Hispanic.
+
+Cumulative Cases = 315.11931521 + 0.07300349(Total Population) + 0.08304726(Total Hispanic) 
+```{r include=FALSE}
+coef(forward.fit,2)
+```
+
+Backward Stepwise:
+The model has parameters: Total Population, Total White, Total Black, Total Hispanic, Total Other, and Total Number of Households Above Poverty.
+
+Cumulative Cases = -338.60412493 -0.38868473(Total Population) +0.58210948(Total White) +0.55858828(Total Black) +0.05514001(Total Hispanic) +0.51284419(Total Other) -0.29137162(Total Number of Households Above Poverty)
+```{r include=FALSE}
+coef(backward.fit,6)
+```
 
 
 # Shrinkage Methods
 
-## Slide Name
+## Ridge Regression and Lasso
 
-slide text
+```{r}
+set.seed(100)
+k <- 10
+cv.error.lasso <- rep(NA,k)
+cv.error.ridge <- rep(NA,k)
+cv.lam.lasso <- rep(NA,k)
+cv.lam.ridge <- rep(NA,k)
+set.seed(1)
+folds<-sample(1:k,nrow(dat[,c(4:13)]),replace=TRUE)
+for (i in 1:k){
+  train <- dat[folds!=i,c(4:13)] #Set the training set
+  test <- dat[folds==i,c(4:13)] #Set testing set
+  x.train <- model.matrix(cum_case~., data=train)[,-1]
+  y.train <- train$cum_case
+  x.test <- model.matrix(cum_case~., data=test)[,-1]
+  y.test <- test$cum_case
+  
+  #Lasso
+  lasso.mod <- glmnet(x.train,y.train,alpha=1)
+  cv.out <- cv.glmnet(x.train,y.train,alpha=1)
+  bestlam <- cv.out$lambda.min
+  cv.lam.lasso[i] <- bestlam
+  lasso.pred <- predict(lasso.mod,s=bestlam ,newx=x.test)
+  cv.error.lasso[i] <- mean((lasso.pred-y.test)^2)
+  
+  
+  #Ridge
+  ridge.mod <- glmnet(x.train,y.train,alpha=0)
+  cv.out <- cv.glmnet(x.train,y.train,alpha=0)
+  bestlam <- cv.out$lambda.min
+  cv.lam.ridge[i] <- bestlam
+  ridge.pred <- predict(ridge.mod,s=bestlam ,newx=x.test)
+  cv.error.ridge[i] <- mean((ridge.pred-y.test)^2)
+
+}
+```
+
+Recall that Ridge Regression performs better when the response is a function of many predictors of roughly equal size and Lasso performs better when the response is a function of a small subset of predictors.
+
+10-fold Cross Validation was performed to find the optimal tuning parameter $\lambda$ for each method. 
+
+
+---
+```{r}
+data.frame("Fold" = rep(1:10,2),
+           "Error" = c(cv.error.ridge,cv.error.lasso),
+           "Method" = c(rep("Ridge Regresion",10),rep("Lasso",10))) %>%
+  ggplot(aes(x=Fold,y=Error,color=Method))+
+  geom_point()+
+  geom_line() + 
+  geom_point(aes(x=which.min(cv.error.ridge),
+                 y=cv.error.ridge[which.min(cv.error.ridge)]),
+             color="blue")+ 
+  geom_point(aes(x=which.min(cv.error.lasso),
+                 y=cv.error.lasso[which.min(cv.error.lasso)]),
+             color="red") +
+  scale_x_continuous(breaks = seq(1,10,2))
+  
+```
+
+
+## Ridge With Lambda that Produces Smallest C.V. Error
+
+```{r include=FALSE}
+# Ridge CV Errors and Mean
+cv.error.ridge[which.min(cv.error.ridge)]
+mean(cv.error.ridge)
+```
+
+The smallest Cross Validation Error for Ridge Regression is 24901393 with and average of 58650401.
+
+The model selected is:
+
+Cumulative Cases = 2659.26735391 
+-1.46826014(Population Density)
++0.01675252(Total Population)
+-60.01296350(Median Age)
++0.03389108(Total White) 
++0.04046944(Total Black) 
++0.06843143 (Total Hispanic) 
++0.03043294 (Total Other) 
++0.29137162(Total Number of Households Above Poverty)
++0.27874317(Total Number of Households Below Poverty)
+
+```{r include=FALSE}
+x<-model.matrix(cum_case~., data=dat[,c(4:13)])[,-1]
+y<-dat$cum_case
+
+ridge.fit<-glmnet(x,y,alpha=0)
+ridge.coef<-predict(ridge.fit,type="coefficients",
+                    s=cv.lam.ridge[which.min(cv.error.ridge)])[1:9,]
+ridge.coef[ridge.coef!=0]
+```
+
+
+
+## Lasso With Lambda that Produces Smallest C.V. Error
+
+```{r include=FALSE}
+# Lasso CV Errors and Mean
+cv.error.lasso[which.min(cv.error.lasso)]
+mean(cv.error.lasso)
+
+```
+
+The smallest Cross Validation Error for Lasso is 21711998 with and average of 64144413.
+
+The model selected is:
+
+Cumulative Cases = 286.95400883 
++0.04444873(Total Population)
++0.02943025(Total White) 
++0.01685243(Total Black) 
++0.08547591(Total Hispanic) 
++0.09854572(Total Number of Households Below Poverty)
+```{r include=FALSE}
+lasso.fit<-glmnet(x,y,alpha=1)
+lasso.coef<-predict(lasso.fit,type="coefficients",
+                    s=cv.lam.lasso[which.min(cv.error.lasso)])[1:9,]
+lasso.coef[lasso.coef!=0]
+```
+
+# Tree Based Methods
+
+## Regression Trees
+
+```{r}
+tree_dat <- dat %>% 
+  subset(select = c(4:13)) %>% 
+  rename("Cum. Cases" = 1) %>% 
+  rename("Pop. Dens." = 2) %>% 
+  rename("Total Pop." = 3) %>% 
+  rename("Med. Age" = 4) %>% 
+  rename("Total White" = 5) %>% 
+  rename("Total Black" = 6) %>% 
+  rename("Total Hisp." = 7) %>% 
+  rename("Total Other" = 8) %>% 
+  rename("House. Bel. Pov." = 9) %>% 
+  rename("House. Ab. Pov." = 10) 
+  
+tree <- rpart(`Cum. Cases` ~.,
+              data=tree_dat,control=rpart.control(cp=.0001))
+
+#printcp(tree)
+
+best <- tree$cptable[which.min(tree$cptable[,"xerror"]),"CP"]
+pruned_tree <- prune(tree, cp=best)
+prp(pruned_tree,
+    faclen=0, #use full names for factor labels
+    extra=1, #display number of obs. for each terminal node
+    roundint=F, #don't round to integers in output
+    branch = 1,
+    varlen = 0,
+    digits=5,) #display 5 decimal places in output
+```
+
 
 
 # Classification

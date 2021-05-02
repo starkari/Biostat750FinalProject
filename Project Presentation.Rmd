@@ -41,11 +41,19 @@ dat <- read_csv("case_and_demographics.csv") %>%
 
 ## Data Set Overview
 
-Overview of our data set choices and question
+The data set contains cumulative COVID-19 case counts as of April 1, 2021 for each of the 3,220 counties in the United States. Also we have racial and ethnicity demographics, poverty demographics, population demographics, and age demographics from government census data. Note Rio Arriba County, New Mexico is missing poverty demographics and has thus been excluded from analysis. leaving our data set with 9 predictors and 3219 observations
 
 ## Our Variables
-
-list of variables
+- Cumulative COVID-19 Cases
+- Total Population
+- Population Density
+- Median Age
+- Total Number of White Residents
+- Total Number of Black Residents
+- Total Number of Other (Not strictly White or Black) Residents
+- Total Number of Hispanic Residents
+- Total Number of Households Above the Poverty Line
+- Total Number of Households Below the Poverty Line
 
 ## Our Variables: Plots
 

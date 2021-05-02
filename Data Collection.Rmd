@@ -1,0 +1,130 @@
+---
+title: "Data Collection"
+author: "Ariane Stark"
+date: "4/19/2021"
+output: html_document
+---
+
+```{r include=FALSE}
+library(readr)
+library(readxl)
+library(tidyverse)
+```
+
+```{r message=FALSE}
+#load  pop county data
+Pop_County <- read_csv("data-pull/Population_-_County.csv") %>% 
+  rename(Total_Pop = B01001_001E) %>% 
+  subset(select=c(6:7))
+
+Pop_County_GEO_FIPS <- read_csv("data-pull/Population_-_County.csv") %>% 
+  subset(select = c(2,6))
+
+# Pop_Age_Sex_no_FIPS <-
+#   read_csv("data-pull/Population_by_Age_and_Sex_-_Counties.csv") %>% 
+#   subset(select = -c(1))
+# 
+# Pop_Age_Sex <- full_join(Pop_County_GEO_FIPS,Pop_Age_Sex_no_FIPS)
+# 
+# Pop_Age_Sex <- Pop_Age_Sex %>% 
+#   rename(Total_Pop = 5) %>% 
+#   rename(Male_Pop = 7) %>% 
+#   transform(Male_Pop_Prop = Male_Pop/Total_Pop) %>% 
+#   subset(select = c(2,127))
+
+
+Age_Sex_Col_Names <-
+  read_csv("data-pull/age_sex_col_names.csv", col_names = FALSE) %>% 
+  rename("code"=1) %>% 
+  rename("name"=2)
+
+Pop_Age_Sex <-
+  read_csv("data-pull/Population_by_Age_and_Sex_-_Counties.csv") %>%
+  subset(select = -c(1)) %>% 
+  select(!ends_with("M", ignore.case = FALSE)) %>% 
+  rename(Total_Pop = B01001_001E) %>% 
+  rename(FIPS_CODE = GEOID) %>% 
+  subset(select =-c(1:4,7:9))
+
+for (i in 1:length(names(Pop_Age_Sex))) {
+  var <- substr(names(Pop_Age_Sex)[i],1,nchar(names(Pop_Age_Sex)[i])-1)
+  names(Pop_Age_Sex)[i] <- 
+    ifelse(var %in% Age_Sex_Col_Names$code,
+           Age_Sex_Col_Names$name[which(var == Age_Sex_Col_Names$code)],
+           names(Pop_Age_Sex)[i])
+}
+
+Pop_Age_Sex <- Pop_Age_Sex %>% 
+  rename(Median_Age = B01002_001E) %>% 
+  subset(select =c(1:54))
+
+Pop_Race <- read_csv("data-pull/Race_and_Ethnicity_-_County.csv") %>% 
+  rename(Total_White = 6) %>% 
+  rename(Total_Black = 8) %>% 
+  rename(Total_Amercan_Indian = 10) %>% 
+  rename(Total_Asian = 12) %>% 
+  rename(Total_PacI = 14) %>% 
+  rename(Total_Some_Other = 16) %>% 
+  rename(Total_2plus = 18) %>% 
+  rename(Total_Not_Hispanic = 20) %>% 
+  rename(Total_Hispanic = 22) %>% 
+  subset(select = c(5,6,8,20,22)) %>% 
+  transform(Total_Other = Total_Hispanic + Total_Not_Hispanic -
+              Total_Black - Total_White) %>% 
+  subset(select = c(1:3,5:6))
+ 
+
+Pop_Poverty_NoFIPS <-
+  read_csv("data-pull/Population_and_Poverty_-_Counties.csv") %>%
+                                 subset(select = -c(1))
+
+Pop_Poverty <- full_join(Pop_County_GEO_FIPS,Pop_Poverty_NoFIPS)
+  
+  
+  
+Pop_Poverty <- Pop_Poverty %>%
+  rename(Total_Households_Below_Poverty = 24) %>%
+  rename(Total_Households_Above_Poverty = 25) %>%
+  subset(select = c(2,24:25))
+ 
+#clean up data 
+# joined_1 <- full_join(Pop_County, Pop_Age_Sex)
+joined_1 <- full_join(Pop_Age_Sex, Pop_Race)
+joined_2 <- full_join(joined_1,Pop_Poverty)
+
+full_data <- joined_2
+
+
+remove(Pop_Age_Sex,Pop_Age_Sex_no_FIPS,Pop_County,Pop_County_GEO_FIPS,Pop_Poverty,
+       Pop_Poverty_NoFIPS,Pop_Race,joined_1,joined_2,joined_3)
+```
+
+```{r}
+cum_case <- read_csv("data-pull/covidcast-indicator-combination-confirmed_cumulative_num-2021-03-21-to-2021-04-18.csv") %>%
+                                 subset(select = -c(1))
+
+
+cum_case <- cum_case %>% 
+  filter(time_value == "2021-04-01") %>% 
+  subset(select=c(1,6)) %>% 
+  rename("FIPS_CODE" = geo_value) %>% 
+  rename("cum_case" = value) 
+```
+
+
+```{r}
+case_and_demographics <- inner_join(cum_case,full_data)
+```
+
+```{r}
+write.csv(case_and_demographics,file = "case_and_demographics.csv",
+          col.names = TRUE)
+```
+
+```{r}
+ggplot()+
+  geom_histogram(mapping = 
+                   aes(case_and_demographics$cum_case),bins = 500)
+
+```
+

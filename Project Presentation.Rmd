@@ -26,8 +26,17 @@ library(cowplot)
 library(kableExtra)
 
 # Minsu packages
-
-
+# install.packages("reshape2")
+library(reshape2)
+library(ggplot2)
+library(scales)
+#install.packages("patchwork")
+library(patchwork)
+library(class)
+library(MASS)
+# install.packages("gridExtra")
+library(gridExtra)
+library(grid)
 ```
 
 
@@ -40,6 +49,19 @@ dat <- read_csv("case_and_demographics.csv") %>%
 ```
 
 # Introduction 
+
+## Background
+
+
+
+
+## Study Objectives
+
+- 
+
+- Fit a classification model to predict whether a given county has an instance rate higher than the median of the instance rates.
+
+
 
 ## Data Set Overview
 
@@ -59,10 +81,34 @@ The data set contains cumulative COVID-19 case counts as of April 1, 2021 for ea
 
 ## Our Variables: Plots
 
-3x3 grid of the predictors
+```{r, fig.align='center', out.width = '90%'}
+dat <- read_csv("case_and_demographics.csv") %>%
+  subset(select = -c(1)) %>% 
+  subset(select = c(1,3:4,2,5:6,43,56:61 )) %>% 
+  na.omit() #row 1817 is removed 
+dat1 <- dat[, -c(1:3)]
+
+## distribution plots
+d <- melt(dat1[, -c(1)])
+raw.plot <- ggplot(d, aes(x = value)) +
+  facet_wrap(~variable, scales = "free_x") +
+  geom_histogram()
+raw.plot  #all but median_age are highly right skewed 
+```
 
 
 # Simple Linear Regression
+
+```{r, fig.align='center', out.width = '90%'}
+#scatter plots with simple linear regression
+dat1 %>% gather(-cum_case, key = "var", value = "value") %>% 
+  ggplot(aes(x = value, y = cum_case)) +
+    geom_point() +
+    geom_smooth(method='lm')+
+    facet_wrap(~ var, scales = "free") +
+    theme_bw()
+```
+
 
 ## Slide Name
 

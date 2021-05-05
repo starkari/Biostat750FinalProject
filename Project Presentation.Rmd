@@ -485,7 +485,6 @@ prp(pruned_tree,
 ```
 
 
-
 # Classification
 
 ## Slide Name

@@ -55,13 +55,6 @@ dat <- read_csv("case_and_demographics.csv") %>%
 
 
 
-## Study Objectives
-
-- 
-
-- Fit a classification model to predict whether a given county has an instance rate higher than the median of the instance rates.
-
-
 
 ## Data Set Overview
 
@@ -79,7 +72,21 @@ The data set contains cumulative COVID-19 case counts as of April 1, 2021 for ea
 - Total Number of Households Above the Poverty Line
 - Total Number of Households Below the Poverty Line
 
-## Our Variables: Plots
+## Our Variables: Plots (Response)
+```{r fig.height=4}
+dat %>% ggplot() +
+  geom_boxplot(aes(x=cum_case)) +
+  scale_x_log10() +
+  xlab("Log Base 10 Scale of Cumulative Cases")
+```
+
+
+```{r}
+print(summary(dat$cum_case))
+```
+
+
+## Our Variables: Plots (Predictors)
 
 ```{r, fig.align='center', out.width = '90%'}
 dat <- read_csv("case_and_demographics.csv") %>%
@@ -95,6 +102,14 @@ raw.plot <- ggplot(d, aes(x = value)) +
   geom_histogram()
 raw.plot  #all but median_age are highly right skewed 
 ```
+
+
+
+## Study Objectives
+
+- Select the demographics that yields a good predictive model for cumulative COVID-19 cases at the county level.
+
+- Fit a classification model to predict whether a given county has an instance rate higher than the median of the instance rates.
 
 
 # Simple Linear Regression
@@ -178,7 +193,8 @@ for(j in 1:k){
   } }
 ```
 
----
+##  
+
 ```{r}
 #best subset CV model selection
 mean.cv.errors.best <- apply(cv.errors.best_subset,2,mean)
@@ -299,7 +315,7 @@ backward.summary.frame
 ```
 
 ## Model Summary
-Best Subset:
+**Best Subset:**
 The model has parameters: Total Population, and Total Hispanic.
 
 Cumulative Cases = 315.11931521 + 0.07300349(Total Population) + 0.08304726(Total Hispanic) 
@@ -307,7 +323,7 @@ Cumulative Cases = 315.11931521 + 0.07300349(Total Population) + 0.08304726(Tota
 coef(best_subset.fit,2)
 ```
 
-Forward Stepwise:
+**Forward Stepwise:**
 The model has parameters: Total Population, Total White, and Total Hispanic.
 
 Cumulative Cases = 315.11931521 + 0.07300349(Total Population) + 0.08304726(Total Hispanic) 
@@ -315,7 +331,10 @@ Cumulative Cases = 315.11931521 + 0.07300349(Total Population) + 0.08304726(Tota
 coef(forward.fit,2)
 ```
 
-Backward Stepwise:
+
+## 
+
+**Backward Stepwise:**
 The model has parameters: Total Population, Total White, Total Black, Total Hispanic, Total Other, and Total Number of Households Above Poverty.
 
 Cumulative Cases = -338.60412493 -0.38868473(Total Population) +0.58210948(Total White) +0.55858828(Total Black) +0.05514001(Total Hispanic) +0.51284419(Total Other) -0.29137162(Total Number of Households Above Poverty)
@@ -370,7 +389,8 @@ Recall that Ridge Regression performs better when the response is a function of 
 10-fold Cross Validation was performed to find the optimal tuning parameter $\lambda$ for each method. 
 
 
----
+## 
+
 ```{r}
 data.frame("Fold" = rep(1:10,2),
            "Error" = c(cv.error.ridge,cv.error.lasso),
@@ -494,9 +514,13 @@ slide text
 
 # Conclusion
 
-## Slide Name
+## 
 
-slide text
+- Selection methods without cross-validation each selected the same model at each parameter level, however their cross validation had Backward Stepwise selecting a model with more parameters.
+
+- Ridge Regression performed better on average but Lasso had a slightly smaller minimum error during cross validation.
+
+-
 
 
 

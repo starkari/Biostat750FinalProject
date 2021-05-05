@@ -1,5 +1,5 @@
 ---
-title: "Presentation"
+title: "Predictive models for cumulative COVID-19 cases in USA"
 author: "Minsu Kim, Ariane Stark"
 output: 
   beamer_presentation:
@@ -37,6 +37,7 @@ library(MASS)
 # install.packages("gridExtra")
 library(gridExtra)
 library(grid)
+library(tree)
 ```
 
 
@@ -52,13 +53,36 @@ dat <- read_csv("case_and_demographics.csv") %>%
 
 ## Background
 
+- COVID-19 is a coronavirus identified in 2019 and has caused a pandemic of respiratory illness.
+- It has been spreading rapidly since the first case of COVID-19 was reported Dec. 1, 2019.
+- Vaccines have recently been available, but it is too early to be relieved due to concerns about the mutant virus.
+- There is still a need to keep an eye on the trends of cases.
 
+\ \ 
 
-
+\begin{columns}[onlytextwidth,T]
+\begin{column}{.45\linewidth}
+    \includegraphics[width=0.8\linewidth]{CoronaVirus.jpeg}
+    \end{column}
+    \begin{column}{.45\linewidth}
+    \includegraphics[width=0.8\linewidth]{covid19_county_view.png}
+    \end{column}
+ \end{columns}   
+    \begingroup
+  \fontsize{5}{7}\selectfont
+  (Figure: https://www.denhamblythe.com/covid-19-health-statement)
+  (Figure:https://covid.cdc.gov/covid-data-tracker/#datatracker-home)
+  \endgroup
 
 ## Data Set Overview
 
-The data set contains cumulative COVID-19 case counts as of April 1, 2021 for each of the 3,220 counties in the United States. Also we have racial and ethnicity demographics, poverty demographics, population demographics, and age demographics from government census data. Note Rio Arriba County, New Mexico is missing poverty demographics and has thus been excluded from analysis. leaving our data set with 9 predictors and 3219 observations
+The data set contains cumulative COVID-19 case counts as of April 1, 2021 for each of the 3,220 counties in the United States. Also we have racial and ethnicity demographics, poverty demographics, population demographics, and age demographics from government census data. Note Rio Arriba County, New Mexico is missing poverty demographics and has thus been excluded from analysis, leaving our data set with 9 predictors and 3219 observations.
+
+\begingroup
+\fontsize{8}{10}\selectfont
+(Source:https://covid19.census.gov)
+\endgroup
+
 
 ## Our Variables
 - Cumulative COVID-19 Cases
@@ -109,7 +133,7 @@ raw.plot  #all but median_age are highly right skewed
 
 - Select the demographics that yields a good predictive model for cumulative COVID-19 cases at the county level.
 
-- Fit a classification model to predict whether a given county has an instance rate higher than the median of the instance rates.
+- Fit classification models to predict whether a given county has an instance rate higher than the median of the instance rates.
 
 
 # Simple Linear Regression
@@ -123,12 +147,6 @@ dat1 %>% gather(-cum_case, key = "var", value = "value") %>%
     facet_wrap(~ var, scales = "free") +
     theme_bw()
 ```
-
-
-## Slide Name
-
-slide text
-
 
 
 # Subset Selection
@@ -505,22 +523,201 @@ prp(pruned_tree,
 ```
 
 
-# Classification
+# Classification Analysis
 
-## Slide Name
+**Question**: Does a given county have an instance rate higher than the median of the instance rates?
 
-slide text
+\ \ 
+
+- Binary qualitative response: 
+\begin{equation*}
+\text{Instance rate} =
+\begin{cases}
+1,\quad \text{above the median of the instance rate}\\
+0,\quad \text{otherwise}
+\end{cases}
+\end{equation*}
+
+- Consider '$\color{blue}{\text{Poverty Rate}}$' instead of 'Total_Households_Above_Poverty' and 'Total_Households_Below_Poverty'
+
+## Revisit Plot of Predictors 
+
+```{r, fig.align='center', out.width = '90%'}
+cls.dat <- dat1 %>% 
+  mutate(case_rate = cum_case/Total_Pop,
+         Total_Households = Total_Households_Above_Poverty + Total_Households_Below_Poverty) %>% 
+  mutate(poverty_rate = Total_Households_Below_Poverty/Total_Households) %>% 
+  subset(select = c(11, 2,5:8,4, 13 )) # 7 predictors: POP_DENSITY,Median_Age,Total_White,Total_Black,Total_Hispanic,Total_Other,poverty_rate  
+
+## distribution plots
+d <- melt(cls.dat[, -c(1)])
+raw.plot <- ggplot(d, aes(x = value)) +
+  facet_wrap(~variable, scales = "free_x") +
+  geom_histogram()
+raw.plot
+```
+
+
+## Data Transformation
+
+```{r, fig.align='center', out.width = '90%'}
+#data log transformation
+log.dat <- cls.dat
+log.dat[, -c(1, 7)] <- log10(cls.dat[, -c(1, 7)]+1) #log transformation except cum_case and Median Age
+
+#distribution plots of predictors after log transformation and un-transformed Median_age
+d.log <- melt(log.dat[, -c(1)])
+log.dat.plot <- ggplot(d.log, aes(x = value)) +
+  facet_wrap(~variable, scales = "free_x") +
+  geom_histogram() 
+log.dat.plot 
+```
+
+## Multiple Logistic Regression 
+
+- Estimated coefficients of the logistic regression model with all predictors
+```{r}
+rate01 <- rep(0, length(log.dat$case_rate)) 
+rate01[log.dat$case_rate > median(log.dat$case_rate)] <- 1 #high instance rate==1, low ins.rate==0
+log.dat2 <- data.frame(rate01, log.dat[,-c(1)])
+
+#glm fit with all predictors
+glm.fit.all <- glm(rate01 ~ . , data = log.dat2, family = binomial)
+kable(round(summary(glm.fit.all)$coefficient, 4)) 
+```
+
+- 'Total_Hispanic' is not statistically significant. 
+
+## Misclassification Error Rate 
+
+- Logistic Regression, LDA, QDA, KNN, and Decision Trees are performed.
+
+- The 5-fold cross-validation is used for each classifier.
+
+\ \ 
+
+```{r}
+#Randomly split the data set into 5 subsets with approximately equal size for 5-fold cross-validation
+n <- nrow(log.dat2)
+set.seed(1)
+sample.id <- sample(rep(1:5, times = ceiling(n/5))[1:n])
+training.list <- testing.list <- list()
+for (i in 1:5) {
+training.list[[i]] = log.dat2[sample.id != i, ]
+testing.list[[i]] = log.dat2[sample.id == i, ]
+}
+
+glm.miscls <- 0
+lda.miscls <- 0
+qda.miscls <- 0
+for (i in 1:5){
+  #glm.log fit 
+glm.log <- glm(rate01 ~ . , data = training.list[[i]], family = binomial)
+glm.probs <- predict(glm.log, testing.list[[i]], type = "response")
+glm.pred <- rep(0, length(glm.probs))
+glm.pred[glm.probs > 0.5] <- 1
+glm.miscls[i] <- mean(glm.pred != testing.list[[i]]$rate01)
+
+#LDA
+lda.fit <- lda(rate01 ~  . , data = training.list[[i]])
+lda.pred <- predict(lda.fit, testing.list[[i]])
+lda.class <- lda.pred$class
+lda.miscls[i] <- mean(lda.class != testing.list[[i]]$rate01)
+
+#QDA
+qda.fit <- qda(rate01 ~  . , data = training.list[[i]])
+qda.pred <- predict(qda.fit, testing.list[[i]])
+qda.class <- qda.pred$class
+qda.miscls[i]  <- mean(qda.class != testing.list[[i]]$rate01)
+
+}
+glm.err <- mean(glm.miscls)
+lda.err <- mean(lda.miscls)
+qda.err <- mean(qda.miscls)
+
+cat(paste("    glm.misclassification =", round(glm.err, 4)))
+cat(paste("    LDA.misclassification =", round(lda.err, 4)))
+cat(paste("    QDA.misclassification =", round(qda.err, 4)))
+```
+\ \ 
+
+- These all three classifiers have about 63% of overall correct prediction rates. 
+
+## K-Nearest Neighbors (KNN)
+
+```{r, fig.align='center', out.width = '90%'}
+#KNN with different k
+knn.err <- 0
+for(k in 1:50){
+knn.miscls <- 0
+for (i in 1:5){
+knn.pred <- knn(train = as.matrix(training.list[[i]][, -c(1)]),
+    test = as.matrix(testing.list[[i]][, -c(1)]),
+    cl = training.list[[i]][,1], k = k)
+    knn.miscls[i] <- mean(knn.pred != testing.list[[i]][,1])
+}
+knn.err[k] <- mean(knn.miscls)
+}
+k.best <- which(knn.err == min(knn.err))
+
+df <- data.frame(x=1:length(knn.err), y=knn.err)
+df %>% ggplot(mapping= aes(x, y)) + 
+  geom_point(shape=21) + 
+  geom_line() +
+  geom_point(aes(x=k.best, y=knn.err[k.best]) , color="red", size=2)+
+  labs(x="K", y="Error Rate", title = "KNN Misclassification Error Rate")+
+  geom_label(data=df %>% filter(y==min(y)), aes(label = paste0("(K=",k.best,", ", round(y,3),")")), hjust = -0.1, vjust= .75)
+```
+
+## Tree-based Classification 
+
+```{r, fig.align='center', out.width = '90%'}
+log.dat2$high <- ifelse(log.dat2$rate01 ==1, "Higher", "Lower")
+tree.rate <- tree(as.factor(high) ~ . - rate01, log.dat2)
+
+plot(tree.rate) 
+text(tree.rate, pretty = 0)
+```
+
+## Tree Misclassification Error Rate 
+
+```{r, fig.align='center', out.width = '90%'}
+set.seed(1)
+cv.tree.rate <- cv.tree(tree.rate, FUN = prune.misclass, K = 5)
+df.tree <- data.frame(size = cv.tree.rate$size, err = cv.tree.rate$dev / 3219)
+tree.err <- min(df.tree$err)
+df.tree %>% ggplot(aes(x = size, y = err)) +
+  geom_point(shape = 21) +
+  geom_line() +
+  labs(x = "number of terminal nodes", y = "Error Rate", 
+       title = "Tree Misclassification Error Rate") +
+  geom_point(aes(x = 4, y = min(err)), color = "red", size = 2) +
+  geom_label(data = df.tree %>% filter(size == 4), 
+             aes(label = sprintf("%.4f", err)), hjust = 0.5, vjust = -0.5)
+```
+
+
+## Comparison of Error Rates
+
+```{r}
+df.err <- data.frame(glm = round(glm.err, 4), LDA = round(lda.err,4), QDA=round(qda.err,4), 
+                     KNN=round(knn.err[k.best],4), tree=round(tree.err, 4))
+colnames(df.err) <- c("GLM", "LDA", "QDA", "KNN(K=40)", "Tree")
+kable(df.err, caption = "Misclassification Error Rate")
+```
+
+- All of the classifiers produce similar error rates.
 
 
 # Conclusion
 
-## 
+## Results
 
 - Selection methods without cross-validation each selected the same model at each parameter level, however their cross validation had Backward Stepwise selecting a model with more parameters.
 
 - Ridge Regression performed better on average but Lasso had a slightly smaller minimum error during cross validation.
 
--
+- In prediction of whether a given county is going to have a higher instance rate than the its median, all the classifiers employed in this project (Logistic regression, LDA, QDA, KNN, and Decision Tree) result in the similar accuracy of prediction; about 60% - 63% of overall correct prediction rates.
 
 
 

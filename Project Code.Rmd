@@ -14,6 +14,17 @@ library(rpart.plot)
 library(leaps)
 library(glmnet)
 library(kableExtra)
+library(reshape2)
+library(ggplot2)
+library(scales)
+library(patchwork)
+library(class)
+library(MASS)
+library(gridExtra)
+library(grid)
+library(glmnet)
+library(kableExtra)
+library(tree)
 ```
 
 ```{r message=FALSE, warning=FALSE}
@@ -301,3 +312,177 @@ prp(pruned_tree,
     digits=5) #display 5 decimal places in output
 ```
 
+
+# Minsu
+
+
+## Descriptive data
+```{r}
+dat <- read_csv("case_and_demographics.csv") %>%
+  subset(select = -c(1)) %>% 
+  subset(select = c(1,3:4,2,5:6,43,56:61 )) %>% 
+  na.omit() #row 1817 is removed 
+dat <- dat[, -c(1:3)]
+
+dim(dat) #obs: 3219 counties, 9 predictors
+names(dat)
+
+# data summary 
+summary(dat)
+
+## distribution plots
+d <- melt(dat[, -c(1)])
+raw.plot <- ggplot(d, aes(x = value)) +
+  facet_wrap(~variable, scales = "free_x") +
+  geom_histogram()
+raw.plot  #all but median_age are highly right skewed 
+
+#scatter plots with simple linear regression
+dat %>% gather(-cum_case, key = "var", value = "value") %>% 
+  ggplot(aes(x = value, y = cum_case)) +
+    geom_point() +
+    geom_smooth(method='lm')+
+    facet_wrap(~ var, scales = "free") +
+    theme_bw() +
+    labs(x = "variable", y = "cum_case", 
+       title = "Simple linear regressions on scatter plots")
+    
+```
+
+
+## Classification
+Aim: Fit classification models to predict whether a given county has an instance rate higher than the median of the instance rates.
+
+```{r}
+cls.dat <- dat %>% 
+  mutate(case_rate = cum_case/Total_Pop,
+         Total_Households = Total_Households_Above_Poverty + Total_Households_Below_Poverty) %>% 
+  mutate(poverty_rate = Total_Households_Below_Poverty/Total_Households) %>% 
+  subset(select = c(11, 2,5:8,4, 13 )) # 7 predictors: POP_DENSITY,Median_Age,Total_White,Total_Black,Total_Hispanic,Total_Other,poverty_rate  
+
+## distribution plots
+d <- melt(cls.dat[, -c(1)])
+raw.plot <- ggplot(d, aes(x = value)) +
+  facet_wrap(~variable, scales = "free_x") +
+  geom_histogram()+
+    labs(title = "Distribution of each variable")
+raw.plot
+```
+
+### Data transformation
+```{r}
+#data log transformation
+log.dat <- cls.dat
+log.dat[, -c(1, 7)] <- log10(cls.dat[, -c(1, 7)]+1) #log transformation except cum_case and Median Age
+
+#distribution plots of predictors after log transformation and un-transformed Median_age
+d.log <- melt(log.dat[, -c(1)])
+log.dat.plot <- ggplot(d.log, aes(x = value)) +
+  facet_wrap(~variable, scales = "free_x") +
+  geom_histogram() +
+    labs(title = "Distribution of each variable after log-transformation")
+log.dat.plot 
+```
+
+### create binary response: high/low instance rate 
+```{r}
+rate01 <- rep(0, length(log.dat$case_rate)) 
+rate01[log.dat$case_rate > median(log.dat$case_rate)] <- 1 #high instance rate==1, low ins.rate==0
+log.dat2 <- data.frame(rate01, log.dat[,-c(1)])
+
+#glm fit with all predictors
+glm.fit.all <- glm(rate01 ~ . , data = log.dat2, family = binomial)
+kable(summary(glm.fit.all)$coefficient) #Total_Hispanic is not statistically significant, but I will keep it. 
+```
+
+
+```{r}
+log.dat2 <- log.dat2 %>% subset(select = -c(5))  #remove Total_Hispanic
+```
+
+```{r}
+#glm fit with all predictors without Total_Hispanic
+glm.fit.all <- glm(rate01 ~ . , data = log.dat2, family = binomial)
+summary(glm.fit.all)$coefficient
+```
+
+
+```{r}
+#Randomly split the data set into 5 subsets with approximately equal size for 5-fold cross-validation
+n <- nrow(log.dat2)
+set.seed(1)
+sample.id <- sample(rep(1:5, times = ceiling(n/5))[1:n])
+training.list <- testing.list <- list()
+for (i in 1:5) {
+training.list[[i]] = log.dat2[sample.id != i, ]
+testing.list[[i]] = log.dat2[sample.id == i, ]
+}
+
+glm.miscls <- 0
+lda.miscls <- 0
+qda.miscls <- 0
+for (i in 1:5){
+  #glm.log fit 
+glm.log <- glm(rate01 ~ . , data = training.list[[i]], family = binomial)
+glm.probs <- predict(glm.log, testing.list[[i]], type = "response")
+glm.pred <- rep(0, length(glm.probs))
+glm.pred[glm.probs > 0.5] <- 1
+glm.miscls[i] <- mean(glm.pred != testing.list[[i]]$rate01)
+
+#LDA
+lda.fit <- lda(rate01 ~  . , data = training.list[[i]])
+lda.pred <- predict(lda.fit, testing.list[[i]])
+lda.class <- lda.pred$class
+lda.miscls[i] <- mean(lda.class != testing.list[[i]]$rate01)
+
+#QDA
+qda.fit <- qda(rate01 ~  . , data = training.list[[i]])
+qda.pred <- predict(qda.fit, testing.list[[i]])
+qda.class <- qda.pred$class
+qda.miscls[i]  <- mean(qda.class != testing.list[[i]]$rate01)
+
+}
+glm.err <- mean(glm.miscls)
+lda.err <- mean(lda.miscls)
+qda.err <- mean(qda.miscls)
+cat(paste("glm.misclassification =", round(glm.err, 4)))
+cat(paste("LDA.misclassification =", round(lda.err, 4)))
+cat(paste("QDA.misclassification =", round(qda.err, 4)))
+```
+
+
+```{r}
+#KNN with different k
+set.seed(1)
+knn.err <- 0
+for(k in 1:70){
+knn.miscls <- 0
+for (i in 1:5){
+knn.pred <- knn(train = as.matrix(training.list[[i]][, -c(1)]),
+    test = as.matrix(testing.list[[i]][, -c(1)]),
+    cl = training.list[[i]][,1], k = k)
+    knn.miscls[i] <- mean(knn.pred != testing.list[[i]][,1])
+}
+knn.err[k] <- mean(knn.miscls)
+}
+k.best <- which(knn.err == min(knn.err))
+```
+
+
+```{r}
+df <- data.frame(x=1:length(knn.err), y=knn.err)
+df %>% ggplot(mapping= aes(x, y)) + 
+  geom_point(shape=21) + 
+  geom_line() +
+  geom_point(aes(x=k.best, y=knn.err[k.best]) , color="red", size=2)+
+  labs(x="K", y="Error Rate", title = "KNN Misclassification Error Rate")+
+  geom_label(data=df %>% filter(y==min(y)), aes(label = paste0("(K=",k.best,", ", round(y,3),")")), hjust = -0.1)
+```
+
+
+```{r}
+df.err <- data.frame(glm = round(glm.err, 4), LDA = round(lda.err,4), QDA=round(qda.err,4), 
+                     KNN=round(knn.err[k.best],4))
+colnames(df.err) <- c("GLM", "LDA", "QDA", "KNN(K=50)")
+kable(df.err, caption = "Misclassification Error Rate")
+```
